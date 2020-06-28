@@ -1,0 +1,830 @@
+!/usr/bin/env python
+
+import sys
+from time import sleep                  #llama a la libreria para utilizar pausas en el programa
+import signal                    
+from threading import Thread            #llama la libreria de sub procesos
+import firebase_admin
+from firebase_admin import credentials   #llama a la librerias para utilizar la base de datos de firebase
+from firebase_admin import db              
+import datetime                          #llama a la libreria para utilizar la hora real
+from mfrc522 import SimpleMFRC522        #llama a la librea del modulo RFID
+import RPi.GPIO as GPIO     #llama a la libreria de usos de los pines
+import lcddriver            #llama a la libreria del lcd
+
+Display = lcddriver.lcd()   #Nombre para indentificar el display 16x2 a utilizar
+
+reader = SimpleMFRC522()    #Nombre para indentificar el lector RFID a utlizar
+
+GPIO.setmode(GPIO.BOARD)   #Codigo para definir el uso de los pines de la raspberry
+GPIO.setwarnings(False)    #Codigo que desactiva advertencias un poco molestas
+
+PAHT_CRED = '/home/pi/AppWeb/MejoraBicis.json'
+URL_DB = 'https://mejora-en-control-de-bic-5727a.firebaseio.com/' #Variables para decretar credenciales de conexion con Firebase
+
+REF_ADMINISTRACION = 'Administracion'                         #Variables para inicializar nombres en la base de datos
+REF_REGISTRO = 'Registro'
+REF_ESTACIONAMIENTO = 'Estacionamiento'
+REF_DISPONIBILIDAD = 'Disponibles'
+
+REF_ES1 ='Es1'                     #Variables para inicializar nombres y su indentificacion en la base de datos
+REF_ES2 ='Es2'
+REF_ES3 ='Es3'
+REF_ES4 ='Es4'
+REF_ES5 ='Es5'
+
+REF_E1 ='E1'                     #Variables para inicializar nombres y su indentificacion en la base de datos
+REF_E2 ='E2'
+REF_E3 ='E3'
+REF_E4 ='E4'
+REF_E5 = 'E5'
+
+REF_S1 = "S1"                    #Variables para inicializar nombres y su indentificacion en la base de datos
+REF_S2 = "S2"
+REF_S3 = "S3"
+REF_S4 = "S4"
+REF_S5 = "S5"
+
+
+REF_ENTRADAS = 'Entradas'
+REF_SALIDAS = 'Salidas'
+REF_ENTRADA ='Entrada'
+REF_SALIDA = 'Salida'
+
+REF_Sal = "0"
+REF_0 ="0"
+REF_ESTACIONAMIENTO_OCUPADO = 'Estacionamiento ocupado'
+REF_ESTACIONAMIENTO_DESOCUPADO = 'Estacionamiento desocupado'
+
+REF_NOMBRE='Nombre'             #Variables para inicializar nombres y su indentificacion en la base de datos
+REF_CARRERA = 'Carrera'
+REF_LINK = 'Link'
+REF_RUT = 'RUT'
+REF_HORA = 'Hora'
+REF_FECHA = 'Fecha'
+REF_CODIGO = 'Codigo'
+REF_DESIGNADO = 'Designado'
+
+
+
+NS = 0                    #Variable como contador para los registros de Salida
+NE = 0                    #Variable como contador para los registros de Entrada
+
+
+
+class IOT():                        #class para Definir la funcion principal, y sub procesos
+
+    def __init__(self):                                      #Funcion Inicial
+        cred = credentials.Certificate(PAHT_CRED)
+        firebase_admin.initialize_app(cred, {                        #Codigo para ingresar comunicacion con Firebase
+            'databaseURL': URL_DB
+        })
+
+        self.refHome = db.reference(REF_ADMINISTRACION)              #Se define Administracion como principal varible en la base de datos
+        self.refHome1 = db.reference(REF_REGISTRO)                    #Se define Administracion como principal varible en la base de datos
+
+        #self.estructuraInicialDB()                                     # solo ejecutar la primera vez
+        
+        self.refEstacionamiento = self.refHome.child(REF_ESTACIONAMIENTO)            #Se define a Estacionamientos como Varible hijo de Administracion
+
+        self.refDisponibilidad = self.refEstacionamiento.child(REF_DISPONIBILIDAD)   #Se define a Disponibilidad como Varible hijo de Estacionamientos
+
+        self.refEs1 = self.refEstacionamiento.child(REF_ES1)                         #Se definen Es1, Es2, Es3, Es4 y Es5 como Varible hijo Estacionamientos
+        self.refEs2 = self.refEstacionamiento.child(REF_ES2)
+        self.refEs3 = self.refEstacionamiento.child(REF_ES3)
+        self.refEs4 = self.refEstacionamiento.child(REF_ES4)
+        self.refEs5 = self.refEstacionamiento.child(REF_ES5)
+
+
+        self.refDesignado = self.refEstacionamiento.child(REF_DESIGNADO)           #Se define a Designado como Varible hijo de Estacionamientos
+
+
+        self.refEntradas = self.refHome.child(REF_ENTRADAS)                        #Se define a Entradas como Varible hijo de Administracion
+
+        self.refE1 = self.refEntradas.child(REF_E1)                               #Se define a E1 como variable hijo de Entradas
+        self.refNombre =self.refE1.child(REF_NOMBRE)                              #Se define a Nombre como variable hijo de E1
+        self.refHora =self.refE1.child(REF_HORA)                                  #Se define a Hora como variable hijo de E1
+        self.refLink = self.refE1.child(REF_LINK)                                 #Se define a Link como variable hijo de E1
+        self.refRut = self.refE1.child(REF_RUT)                                   #Se define a Rut como variable hijo de E1
+        self.refCarrera = self.refE1.child(REF_CARRERA)                           #Se define a Carrera como variable hijo de E1
+        self.refCodigo = self.refE1.child(REF_CODIGO)                             #Se define a Codigo como variable hijo de E1 
+
+        self.refE2 = self.refEntradas.child(REF_E2)                              #Se repite lo mismo respecto a la variable refE1
+        self.refNombre =self.refE2.child(REF_NOMBRE)                             
+        self.refHora =self.refE2.child(REF_HORA)                                 
+        self.refLink = self.refE2.child(REF_LINK)                                
+        self.refRut = self.refE2.child(REF_RUT)                                  
+        self.refCarrera = self.refE2.child(REF_CARRERA)  
+        self.refCodigo = self.refE2.child(REF_CODIGO)                       
+
+        self.refE3 = self.refEntradas.child(REF_E3)                             #Se repite lo mismo respecto a la variable refE1
+        self.refNombre =self.refE3.child(REF_NOMBRE)                            
+        self.refHora =self.refE3.child(REF_HORA)                                
+        self.refLink = self.refE3.child(REF_LINK)                               
+        self.refRut = self.refE3.child(REF_RUT)
+        self.refCarrera = self.refE3.child(REF_CARRERA)
+        self.refCodigo = self.refE3.child(REF_CODIGO)
+
+        self.refE4 = self.refEntradas.child(REF_E4)                             #Se repite lo mismo respecto a la variable refE1
+        self.refNombre =self.refE4.child(REF_NOMBRE)                            
+        self.refHora =self.refE4.child(REF_HORA)                                
+        self.refLink = self.refE4.child(REF_LINK)                               
+        self.refRut = self.refE4.child(REF_RUT)
+        self.refCarrera = self.refE4.child(REF_CARRERA)
+        self.refCodigo = self.refE4.child(REF_CODIGO)
+
+        self.refE5 = self.refEntradas.child(REF_E5)                          #Se repite lo mismo respecto a la variable refE1   
+        self.refNombre =self.refE5.child(REF_NOMBRE)                            
+        self.refHora =self.refE5.child(REF_HORA)                                
+        self.refLink = self.refE5.child(REF_LINK)                               
+        self.refRut = self.refE5.child(REF_RUT)
+        self.refCarrera = self.refE5.child(REF_CARRERA)
+        self.refCodigo = self.refE5.child(REF_CODIGO)
+
+        self.refSalidas = self.refHome.child(REF_SALIDAS)                   #Se define Salida como variable hijo de Administracion
+
+        self.refS1 = self.refSalidas.child(REF_S1)                          #Se repite lo mismo respecto a la variable refE1  pero esta vez para las salidas
+        self.refNombre =self.refS1.child(REF_NOMBRE)                            
+        self.refHora =self.refS1.child(REF_HORA)                                
+        self.refLink = self.refS1.child(REF_LINK)                               
+        self.refRut = self.refS1.child(REF_RUT)
+        self.refCarrera = self.refS1.child(REF_CARRERA)
+        self.refCodigo = self.refS1.child(REF_CODIGO)
+
+        self.refS2 = self.refSalidas.child(REF_S2)                              #Se repite lo mismo respecto a la variable refE1  pero esta vez para las salidas
+        self.refNombre =self.refS2.child(REF_NOMBRE)                            
+        self.refHora =self.refS2.child(REF_HORA)                               
+        self.refLink = self.refS2.child(REF_LINK)                               
+        self.refRut = self.refS2.child(REF_RUT)
+        self.refCarrera = self.refS2.child(REF_CARRERA)
+        self.refCodigo = self.refS2.child(REF_CODIGO)
+
+        self.refS3 = self.refSalidas.child(REF_S3)                           #Se repite lo mismo respecto a la variable refE1  pero esta vez para las salidas   
+        self.refNombre =self.refS3.child(REF_NOMBRE)                            
+        self.refHora =self.refS3.child(REF_HORA)                                
+        self.refLink = self.refS3.child(REF_LINK)                               
+        self.refRut = self.refS3.child(REF_RUT)
+        self.refCarrera = self.refS3.child(REF_CARRERA)
+        self.refCodigo = self.refS3.child(REF_CODIGO)
+
+        self.refS4 = self.refSalidas.child(REF_S4)                             #Se repite lo mismo respecto a la variable refE1  pero esta vez para las salidas
+        self.refNombre =self.refS4.child(REF_NOMBRE)                           
+        self.refHora =self.refS4.child(REF_HORA)                               
+        self.refLink = self.refS4.child(REF_LINK)                              
+        self.refRut = self.refS3.child(REF_RUT)
+        self.refCarrera = self.refS4.child(REF_CARRERA)
+        self.refCodigo = self.refS4.child(REF_CODIGO)
+
+        self.refS5 = self.refSalidas.child(REF_S5)                      #Se repite lo mismo respecto a la variable refE1  pero esta vez para las salidas       
+        self.refNombre =self.refS5.child(REF_NOMBRE)                           
+        self.refHora =self.refS5.child(REF_HORA)                               
+        self.refLink = self.refS5.child(REF_LINK)                              
+        self.refRut = self.refS5.child(REF_RUT)
+        self.refCarrera = self.refS5.child(REF_CARRERA)
+        self.refCodigo = self.refS5.child(REF_CODIGO)
+
+        self.refEntrada = self.refHome1.child(REF_ENTRADA)             #Se define Entrada como variable hijo de Registro
+
+        self.ref0 = self.refEntrada.child(REF_0)                       #Se define ref0 como variable hijo de Entrada, esta variable cambiara de valor constantemente
+        self.refNombre =self.ref0.child(REF_NOMBRE)                    #Variables hijo de ref0
+        self.refHora =self.ref0.child(REF_HORA)                        
+        self.refFecha=self.ref0.child(REF_FECHA)
+        self.refEstacionamiento_ocupado = self.ref0.child(REF_ESTACIONAMIENTO_OCUPADO)
+
+        self.refSalida = self.refHome1.child(REF_SALIDA)              #Se define Salida como variable hijo de Registro
+
+        self.refSal = self.refSalida.child(REF_Sal)                   #Se define ref0 como variable hijo de Salida, esta variable cambiara de valor constantemente
+        self.refNombre =self.refSal.child(REF_NOMBRE)                  #Variables hijo de ref0
+        self.refHora =self.refSal.child(REF_HORA)
+        self.refFecha=self.refSal.child(REF_FECHA)
+        self.refEstacionamiento_desocupado = self.refSal.child(REF_ESTACIONAMIENTO_DESOCUPADO) 
+
+    def estructuraInicialDB(self):                           #Esta funcion define la estructura base de la base de datos con valores vacios
+
+        self.refHome.set({                                            #Home hace referencia a Administracion
+            'Estacionamiento':{
+                "Designado": 0,
+                'Disponibles': 5,
+                'Es1': 'libre',
+                'Es2': 'libre',
+                'Es3': 'libre',
+                'Es4': 'libre',
+                'Es5': 'libre',
+            },
+            'Entradas' :{
+                'E1': {
+                    'Nombre':'None',
+                    'Hora': 'None', 
+                    'Rut':"None",
+                    'Carrera': 'None',
+                    'Link': 'None',
+                    'Codigo': 'None'
+                }, 
+                'E2': {
+                    'Nombre':'None',
+                    'Hora': 'None', 
+                    'Rut':'None',
+                    'Carrera': 'None',
+                    'Link': 'None',
+                    'Codigo': 'None'
+                }, 
+                'E3': {
+                    'Nombre':'None',
+                    'Hora': 'None', 
+                    'Rut':'None',
+                    'Carrera': 'None',
+                    'Link': 'None',
+                    'Codigo': 'None'
+                }, 
+                'E4': {
+                    'Nombre':'None',
+                    'Hora': 'None', 
+                    'Rut':'None',
+                    'Carrera': 'None',
+                    'Link': 'None',
+                    'Codigo': 'None'
+                },
+                'E5': {
+                    'Nombre':'None',
+                    'Hora': 'None', 
+                    'Rut':'None',
+                    'Carrera': 'None',
+                    'Link': 'None',
+                    'Codigo': 'None'
+                }  
+            },
+            'Salidas' : {
+                'S1': {
+                    'Nombre':'None',
+                    'Hora': 'None', 
+                    'Rut':"None",
+                    'Carrera': 'None',
+                    'Link': 'None'
+                }, 
+                'S2': {
+                    'Nombre':'None',
+                    'Hora': 'None', 
+                    'Rut':'None',
+                    'Carrera': 'None',
+                    'Link': 'None'
+                }, 
+                'S3': {
+                    'Nombre':'None',
+                    'Hora': 'None', 
+                    'Rut':'None',
+                    'Carrera': 'None',
+                    'Link': 'None'
+                }, 
+                'S4': {
+                    'Nombre':'None',
+                    'Hora': 'None', 
+                    'Rut':'None',
+                    'Carrera': 'None',
+                    'Link': 'None'
+                }, 
+                'S5': {
+                    'Nombre':'None',
+                    'Hora': 'None', 
+                    'Rut':'None',
+                    'Carrera': 'None',
+                    'Link': 'None'
+                } 
+            }   
+        })
+        self.refHome1.set({                                               #Home1 hace referencia a Registro
+            'Entrada':{
+                '0':{
+                    'Estacionamiento ocupado': 'None',
+                    'Hora': 'None',
+                    'Nombre': 'None',
+                    'Fecha': 'None',
+                    'Rut': 'None'
+                }
+            },
+            'Salida':{
+                "0":{
+                    'Estacionamiento desocupado': 'None',
+                    'Hora': 'None',
+                    'Nombre': 'None',
+                    'Fecha': 'None',
+                    'Rut': 'None'
+                }
+            }
+        })
+
+    def FS1 (self):                                     #Esta funcion se ejecuta cuando se registra una salida de los estacionamientos especificamente del estacionamiento 1
+       
+        global NS                                        #Se llama a la variable global numero para contar el registro de salidas
+        
+        Carrera = self.refE1.child("Carrera").get()      #Se guarda el dato Carrera del estacionamiento E1 en la variable Carrera
+        Link = self.refE1.child("Link").get()            #Se guarda el dato Link del estacionamiento E1 en la variable Link
+        Nombre = self.refE1.child("Nombre").get()        #Se guarda el dato Nombre del estacionamiento E1 en la variable Nombre
+        Rut = self.refE1.child("Rut").get()              #Se guarda el dato Rut del estacionamiento E1 en la variable Rut
+        Hora = datetime.datetime.now()                   #Se guarda en la variable Hora la fecha y hora exacta, o en tiempo real
+
+        self.refS1.child("Carrera").set(Carrera)         #Se traslada el dato de la variable Carrera a la variable Carrera de la S1 en la base de datos
+        self.refS1.child("Nombre").set(Nombre)           #Se traslada el dato de la variable Nombre a la variable Nombre de la S1 en la base de datos
+        self.refS1.child("Rut").set(Rut)                 #Se traslada el dato de la variable Rut a la variable Rut de la S1 en la base de datos
+        self.refS1.child("Link").set(Link)               #Se traslada el dato de la variable Link a la variable Link de la S1 en la base de datos
+        self.refS1.child("Hora").set(Hora.strftime("%H:%M")) #Se traslada el dato de la variable Hora a la variable Hora de la S1 en la base de datos
+
+        self.refE1.child("Carrera").set("None")         #Se cambia el dato que tenia la variable Carrera del estacionamiento E1 por "None"
+        self.refE1.child("Nombre").set("None")          #Se cambia el dato que tenia la variable Nombre del estacionamiento E1 por "None"
+        self.refE1.child("Rut").set("None")             #Se cambia el dato que tenia la variable Rut del estacionamiento E1 por "None"
+        self.refE1.child("Link").set("None")            #Se cambia el dato que tenia la variable Link del estacionamiento E1 por "None"
+        self.refE1.child("Hora").set("None")            #Se cambia el dato que tenia la variable Hora del estacionamiento E1 por "None"
+        self.refE1.child("Codigo").set("None")
+
+        NS = 1 + NS                                     #Se aumenta el valor de la variable NS en 1 
+        txt="{}"                                        #Se crea el str para poder mostrar la variable NS en el nombre de la lista Sal de la base de datos
+
+        Sal= {                                          #Se define la estructura de la lista Sal
+            'Estacionamiento desocupado': 'E1',
+            'Hora': Hora.strftime("%H:%M"), 
+            'Fecha': Hora.strftime("%d/%m/%Y"),     
+            'Nombre': Nombre,
+            'Rut': Rut
+        }
+        self.refHome1.child("Salida").child(txt.format(NS)).set(Sal)   #Se genera un nuevo Hijo de la varible Salida en la base de datos con el nombre de la variable NS
+    
+    def FS2 (self):                                     #Esta funcion ejecuta lo mismo que la funcion FS1 pero para las salidas del estacionamiento 2
+        global NS
+        
+        Carrera = self.refE2.child("Carrera").get()
+        Link = self.refE2.child("Link").get()
+        Nombre = self.refE2.child("Nombre").get()
+        Rut = self.refE2.child("Rut").get()
+        Hora = datetime.datetime.now()
+
+        self.refS2.child("Carrera").set(Carrera)
+        self.refS2.child("Nombre").set(Nombre)
+        self.refS2.child("Rut").set(Rut)
+        self.refS2.child("Link").set(Link)
+        self.refS2.child("Hora").set(Hora.strftime("%H:%M"))
+
+        self.refE2.child("Carrera").set("None")
+        self.refE2.child("Nombre").set("None")
+        self.refE2.child("Rut").set("None")
+        self.refE2.child("Link").set("None")
+        self.refE2.child("Hora").set("None")
+        self.refE2.child("Codigo").set("None")
+
+        NS = 1 + NS
+        txt="{}"
+        
+        Sal= {
+            'Estacionamiento desocupado': 'E2',
+            'Hora': Hora.strftime("%H:%M"), 
+            'Fecha': Hora.strftime("%d/%m/%Y"),  
+            'Nombre': Nombre,
+            'Rut': Rut
+        }
+        self.refHome1.child("Salida").child(txt.format(NS)).set(Sal)
+        self.refEs2.set("libre")
+    
+    def FS3 (self):                                     #Esta funcion ejecuta lo mismo que la funcion FS1 pero para las salidas del estacionamiento 3
+        global NS
+        
+        Carrera = self.refE3.child("Carrera").get()
+        Link = self.refE3.child("Link").get()
+        Nombre = self.refE3.child("Nombre").get()
+        Rut = self.refE3.child("Rut").get()
+        Hora = datetime.datetime.now()
+
+        self.refS3.child("Carrera").set(Carrera)
+        self.refS3.child("Nombre").set(Nombre)
+        self.refS3.child("Rut").set(Rut)
+        self.refS3.child("Link").set(Link)
+        self.refS3.child("Hora").set(Hora.strftime("%H:%M"))
+
+        self.refE3.child("Carrera").set("None")
+        self.refE3.child("Nombre").set("None")
+        self.refE3.child("Rut").set("None")
+        self.refE3.child("Link").set("None")
+        self.refE3.child("Hora").set("None")
+        self.refE3.child("Codigo").set("None")
+
+        NS = 1 + NS
+        txt="{}"
+        
+        Sal= {
+            'Estacionamiento desocupado': 'E3',
+            'Hora': Hora.strftime("%H:%M"), 
+            'Fecha': Hora.strftime("%d/%m/%Y"),  
+            'Nombre': Nombre,
+            'Rut': Rut
+        }
+        self.refHome1.child("Salida").child(txt.format(NS)).set(Sal)
+        self.refEs3.set("libre")
+
+    def FS4 (self):                                     #Esta funcion ejecuta lo mismo que la funcion FS1 pero para las salidas del estacionamiento 4
+        global NS
+        
+        Carrera = self.refE4.child("Carrera").get()
+        Link = self.refE4.child("Link").get()
+        Nombre = self.refE4.child("Nombre").get()
+        Rut = self.refE4.child("Rut").get()
+        Hora = datetime.datetime.now()
+
+        self.refS4.child("Carrera").set(Carrera)
+        self.refS4.child("Nombre").set(Nombre)
+        self.refS4.child("Rut").set(Rut)
+        self.refS4.child("Link").set(Link)
+        self.refS4.child("Hora").set(Hora.strftime("%H:%M"))
+
+        self.refE4.child("Carrera").set("None")
+        self.refE4.child("Nombre").set("None")
+        self.refE4.child("Rut").set("None")
+        self.refE4.child("Link").set("None")
+        self.refE4.child("Hora").set("None")
+        self.refE4.child("Codigo").set("None")
+
+        NS = 1 + NS
+        txt="{}"
+        
+        Sal= {
+            'Estacionamiento desocupado': 'E4',
+            'Hora': Hora.strftime("%H:%M"), 
+            'Fecha': Hora.strftime("%d/%m/%Y"),
+            'Nombre': Nombre,
+            'Rut': Rut
+        }
+
+        self.refHome1.child("Salida").child(txt.format(NS)).set(Sal)
+        self.refEs4.set("libre")
+
+    def FS5 (self):                                     #Esta funcion ejecuta lo mismo que la funcion FS1 pero para las salidas del estacionamiento 5
+        global NS
+        
+        Carrera = self.refE5.child("Carrera").get()
+        Link = self.refE5.child("Link").get()
+        Nombre = self.refE5.child("Nombre").get()
+        Rut = self.refE5.child("Rut").get()
+        Hora = datetime.datetime.now()
+
+        self.refS5.child("Carrera").set(Carrera)
+        self.refS5.child("Nombre").set(Nombre)
+        self.refS5.child("Rut").set(Rut)
+        self.refS5.child("Link").set(Link)
+        self.refS5.child("Hora").set(Hora.strftime("%H:%M"))
+
+        self.refE5.child("Carrera").set("None")
+        self.refE5.child("Nombre").set("None")
+        self.refE5.child("Rut").set("None")
+        self.refE5.child("Link").set("None")
+        self.refE5.child("Hora").set("None")
+        self.refE5.child("Codigo").set("None")
+
+        NS = 1 + NS
+        txt="{}"
+        
+        Sal= {
+            'Estacionamiento desocupado': 'E5',
+            'Hora': Hora.strftime("%H:%M"), 
+            'Fecha': Hora.strftime("%d/%m/%Y"),
+            'Nombre': Nombre,
+            'Rut': Rut
+        }
+        self.refHome1.child("Salida").child(txt.format(NS)).set(Sal)
+        self.refEs5.set("libre")
+
+    def FE1 (self):                                     #Esta funcion se ejecuta cuando se registra una entrada de los estacionamientos especificamente del estacionamiento 1
+                                 
+        sleep(1)                  #Espera 1 segundo para el desarrollo total de la funcion
+
+        global NE                 #Se utiliza la variable NE para ir aumentando los registro de entrada
+        
+        Nombre = self.refE1.child("Nombre").get()     #Se guarda el dato Nombre del estacionamiento E1 en la variable Nombre
+        Rut = self.refE1.child("Rut").get()           #Se guarda el dato Rut del estacionamiento E1 en la variable Rut
+        Hora = datetime.datetime.now()                #Se guarda la hora y fecha a tiempo real en la variable hora
+
+        NE = 1 + NE                             # la variable NE aumenta en 1
+        txt="{}"                                #Se crea el str para poder mostrar la variable NE en el nombre de la lista Ent de la base de datos
+        
+        Ent= {                                  #Se define la estructura de la lista Ent
+            'Estacionamiento ocupado': 'E1',
+            'Hora': Hora.strftime("%H:%M"), 
+            'Fecha': Hora.strftime("%d/%m/%Y"),
+            'Nombre': Nombre,
+            'Rut': Rut
+        }
+        self.refHome1.child("Entrada").child(txt.format(NE)).set(Ent)  #Se genera un nuevo Hijo de la varible Salida en la base de datos con el nombre de la variable NE
+
+    def FE2 (self):                                     #Esta funcion ejecuta lo mismo que la funcion FE1 pero para las salidas del estacionamiento 2
+
+        sleep(1)
+
+        global NE
+        
+        Nombre = self.refE2.child("Nombre").get()
+        Rut = self.refE2.child("Rut").get()
+        Hora = datetime.datetime.now()
+
+        NE = 1 + NE
+        txt="{}"
+        
+        Ent= {
+            'Estacionamiento ocupado': 'E2',
+            'Hora': Hora.strftime("%H:%M"), 
+            'Fecha': Hora.strftime("%d/%m/%Y"),
+            'Nombre': Nombre,
+            'Rut': Rut
+        }
+        self.refHome1.child("Entrada").child(txt.format(NE)).set(Ent)
+
+    def FE3 (self):                                     #Esta funcion ejecuta lo mismo que la funcion FE1 pero para las salidas del estacionamiento 2
+
+        sleep(1)
+
+        global NE
+        
+        Nombre = self.refE3.child("Nombre").get()
+        Rut = self.refE3.child("Rut").get()
+        Hora = datetime.datetime.now()
+
+        NE = 1 + NE
+        txt="{}"
+        
+        Ent= {
+            'Estacionamiento ocupado': 'E3',
+            'Hora': Hora.strftime("%H:%M"), 
+            'Fecha': Hora.strftime("%d/%m/%Y"),
+            'Nombre': Nombre,
+            'Rut': Rut
+        }
+        self.refHome1.child("Entrada").child(txt.format(NE)).set(Ent)
+
+    def FE4 (self):                                     #Esta funcion ejecuta lo mismo que la funcion FE1 pero para las salidas del estacionamiento 2
+
+        sleep(1)
+
+        global NE
+        
+        Nombre = self.refE4.child("Nombre").get()
+        Rut = self.refE4.child("Rut").get()
+        Hora = datetime.datetime.now()
+
+        NE = 1 + NE
+        txt="{}"
+        
+        Ent= {
+            'Estacionamiento ocupado': 'E4',
+            'Hora': Hora.strftime("%H:%M"), 
+            'Fecha': Hora.strftime("%d/%m/%Y"),
+            'Nombre': Nombre,
+            'Rut': Rut
+        }
+        self.refHome1.child("Entrada").child(txt.format(NE)).set(Ent)
+
+    def FE5 (self):                                     #Esta funcion ejecuta lo mismo que la funcion FE1 pero para las salidas del estacionamiento 2
+
+        sleep(1)
+
+        global NE
+        
+        Nombre = self.refE5.child("Nombre").get()
+        Rut = self.refE5.child("Rut").get()
+        Hora = datetime.datetime.now()
+
+        NE = 1 + NE
+        txt="{}"
+        
+        Ent= {
+            'Estacionamiento ocupado': 'E5',
+            'Hora': Hora.strftime("%H:%M"), 
+            'Fecha': Hora.strftime("%d/%m/%Y"),
+            'Nombre': Nombre,
+            'Rut': Rut
+        }
+        self.refHome1.child("Entrada").child(txt.format(NE)).set(Ent)
+     
+    def Candado1 (self,Estado):               #Esta funcion se encarga de abrir el candado del estacionamiento 1 para cuando se entra o se sale de el
+        GPIO.setmode(GPIO.BOARD)
+        if Estado =="libre" :                         #Compara si el valor es igual a libre, si es asi se ejecuta lo del interior
+            Nombre = self.refS1.child("Nombre").get()    #Guarda la variable Nombre del estacionamiento E1 en la variable Nombre
+            GPIO.setup(11,GPIO.OUT)                      #Se define el pin 11 como salida
+            GPIO.output(11,True)                         #Se activa el pin 11
+            sleep(1)                                     #Espera 1 segundo
+            GPIO.output(11,False)                        #Se desactia el pin 11
+            print("Usuario"+" "+ Nombre +" "+ "Saliendo") #Imprime en la consola de la raspberry que el usuario sale del estacionamiento
+            Display.lcd_display_string( Nombre, 1)        #Imprime el nombre en el display
+            Display.lcd_display_string( "    Saliendo    ", 2) #Imprime la palabra saliendo en el display
+            self.FS1()                                   #llama la funcion FS1
+
+
+        else:                                         #Si el valor es distinto de libre, se ejecuta esta
+            Nombre = self.refE1.child("Nombre").get()   #Guarda la variable Nombre del estacionamiento E1 en la variable Nombre
+            GPIO.setup(11,GPIO.OUT)                     #Se define el pin 11 como salida
+            GPIO.output(11,True)                        #Se activa el pin 11
+            sleep(1)                                    #Espera 1 segundo
+            GPIO.output(11,False)                       #Se desactia el pin 11
+            print("Usuario"+" "+ Nombre +" "+ "Ingresando")        #Imprime en la consola de la raspberry que el usuario sale del estacionamiento
+            Display.lcd_display_string( Nombre, 1)                  #Imprime el nombre en el display
+            Display.lcd_display_string( "   Ingresando   ", 2)     #Imprime la palabra saliendo en el display
+            self.FE1()                                  #llama la funcion FS1
+ 
+    def Candado2 (self,Estado):      #Esta funcion ejecuta lo mismo que la funcion Candado1 pero para el estacionamiento 2 
+        GPIO.setmode(GPIO.BOARD)
+        if Estado =="libre" :
+            Nombre = self.refS2.child("Nombre").get()
+            GPIO.output(12,True)
+            sleep(1)
+            GPIO.output(12,False)
+            print("Usuario"+" "+ Nombre +" "+ "Saliendo")
+            Display.lcd_display_string( Nombre, 1)
+            Display.lcd_display_string( "    Saliendo    ", 2)  
+        else:
+            Nombre = self.refE2.child("Nombre").get()
+            GPIO.output(12,True)
+            sleep(1)
+            GPIO.output(12,False)
+            print("Usuario"+" "+ Nombre +" "+ "Ingresando")
+            Display.lcd_display_string( Nombre, 1)
+            Display.lcd_display_string( "   Ingresando   ", 2)
+            self.FE2()
+
+    def Candado3 (self,Estado):      #Esta funcion ejecuta lo mismo que la funcion Candado1 pero para el estacionamiento 3 
+        GPIO.setmode(GPIO.BOARD)
+        if Estado =="libre" :
+            Nombre = self.refS3.child("Nombre").get()
+            GPIO.setup(13,GPIO.OUT)
+            GPIO.output(13,True)
+            sleep(1)
+            GPIO.output(13,False)
+            print("Usuario"+" "+ Nombre +" "+ "Saliendo")
+            Display.lcd_display_string( Nombre, 1)
+            Display.lcd_display_string( "    Saliendo    ", 2)
+        else:
+            Nombre = self.refE3.child("Nombre").get()
+            GPIO.setup(13,GPIO.OUT)
+            GPIO.output(13,True)
+            sleep(1)
+            GPIO.output(13,False)
+            print("Usuario"+" "+ Nombre +" "+ "Ingresando")
+            Display.lcd_display_string( Nombre, 1)
+            Display.lcd_display_string( "   Ingresando   ", 2)
+            self.FE3()
+
+    def Candado4 (self,Estado):      #Esta funcion ejecuta lo mismo que la funcion Candado1 pero para el estacionamiento 4
+        GPIO.setmode(GPIO.BOARD)
+        if Estado =="libre" :
+            Nombre = self.refS4.child("Nombre").get()
+            GPIO.output(15,True)
+            sleep(1)
+            GPIO.output(15,False)
+            print("Usuario"+" "+ Nombre +" "+ "Saliendo")
+            Display.lcd_display_string( Nombre, 1)
+            Display.lcd_display_string( "    Saliendo    ", 2)
+        else:
+            Nombre = self.refE4.child("Nombre").get()
+            GPIO.output(15,True)
+            sleep(1)
+            GPIO.output(15,False)
+            print("Usuario"+" "+ Nombre +" "+ "Ingresando")
+            Display.lcd_display_string( Nombre, 1)
+            Display.lcd_display_string( "   Ingresando   ", 2)
+            self.FE4()
+
+    def Candado5 (self,Estado):      #Esta funcion ejecuta lo mismo que la funcion Candado1 pero para el estacionamiento 5 
+        GPIO.setmode(GPIO.BOARD)
+        if Estado =="libre" :
+            Nombre = self.refS5.child("Nombre").get()
+            GPIO.output(16,True)
+            sleep(1)
+            GPIO.output(16,False)
+            print("Usuario"+" "+ Nombre +" "+ "Saliendo")
+            Display.lcd_display_string( Nombre, 1)
+            Display.lcd_display_string( "    Saliendo    ", 2)
+        else:
+            Nombre = self.refE5.child("Nombre").get()
+            GPIO.output(16,True)
+            sleep(1)
+            GPIO.output(16,False)
+            print("Usuario"+" "+ Nombre +" "+ "Ingresando")
+            Display.lcd_display_string( Nombre, 1)
+            Display.lcd_display_string( "   Ingresando   ", 2)
+            self.FE5()
+
+        
+    def ComprobacionEntrada (self):  #Esta funcion comprueba que haya un cambio en el dato de los estacionamientos EsX y llama a las funciones Candado, dependiendo de donde se ejercio el cambio
+
+        Es1 = []                   #Se crea una lista para el estacionamiento 1
+        Es2 = []                   #Se crea una lista para el estacionamiento 2
+        Es3 = []                   #Se crea una lista para el estacionamiento 3
+        Es4 = []                   #Se crea una lista para el estacionamiento 4
+        Es5 = []                   #Se crea una lista para el estacionamiento 5
+
+        I1= 0                      #Se crea una variable para comparar posiciones en la lista anterioremente creada para Es1
+        I2= 0                      #Se crea una variable para comparar posiciones en la lista anterioremente creada para Es2
+        I3= 0                      #Se crea una variable para comparar posiciones en la lista anterioremente creada para Es3
+        I4= 0                      #Se crea una variable para comparar posiciones en la lista anterioremente creada para Es4
+        I5= 0                      #Se crea una variable para comparar posiciones en la lista anterioremente creada para Es5
+
+        EA_Es1= self.refEs1.get()   #Se guarda en la variable EA_Es1 el valor anterior del Es1 de la base de datos
+        EA_Es2= self.refEs2.get()   #Se guarda en la variable EA_Es2 el valor anterior del Es2 de la base de datos
+        EA_Es3= self.refEs3.get()   #Se guarda en la variable EA_Es3 el valor anterior del Es3 de la base de datos
+        EA_Es4= self.refEs4.get()   #Se guarda en la variable EA_Es4 el valor anterior del Es4 de la base de datos
+        EA_Es5= self.refEs5.get()   #Se guarda en la variable EA_Es5 el valor anterior del Es5 de la base de datos
+
+        Es1.append(EA_Es1)          #Se guarda el valor de la variable EA_Es1 en la primera posicion de la lista Es1
+        Es2.append(EA_Es2)          #Se guarda el valor de la variable EA_Es2 en la primera posicion de la lista Es2
+        Es3.append(EA_Es3)          #Se guarda el valor de la variable EA_Es3 en la primera posicion de la lista Es3
+        Es4.append(EA_Es4)          #Se guarda el valor de la variable EA_Es4 en la primera posicion de la lista Es4
+        Es5.append(EA_Es5)          #Se guarda el valor de la variable EA_Es5 en la primera posicion de la lista Es5
+
+
+        while True:
+            Ea_Es1 =self.refEs1.get()      #Se guarda en la variable Ea_Es1 el valor actual del Es1 de la base de datos
+            Ea_Es2 =self.refEs2.get()      #Se guarda en la variable Ea_Es1 el valor actual del Es1 de la base de datos
+            Ea_Es3 =self.refEs3.get()      #Se guarda en la variable Ea_Es1 el valor actual del Es1 de la base de datos
+            Ea_Es4 =self.refEs4.get()      #Se guarda en la variable Ea_Es1 el valor actual del Es1 de la base de datos
+            Ea_Es5 =self.refEs5.get()      #Se guarda en la variable Ea_Es1 el valor actual del Es1 de la base de datos
+            
+            Es1.append(Ea_Es1)            #Se guarda el valor de la variable Ea_Es1 en la segunda posicion de la lista Es1
+            Es2.append(Ea_Es2)            #Se guarda el valor de la variable Ea_Es2 en la segunda posicion de la lista Es2
+            Es3.append(Ea_Es3)            #Se guarda el valor de la variable Ea_Es3 en la segunda posicion de la lista Es3
+            Es4.append(Ea_Es4)            #Se guarda el valor de la variable Ea_Es4 en la segunda posicion de la lista Es4
+            Es5.append(Ea_Es5)            #Se guarda el valor de la variable Ea_Es5 en la segunda posicion de la lista Es5
+
+            if Es1[I1] != Es1[-1]:              #Comprueba que haya realmente un cambio en la variable Es1 de la base de datos
+                self.Candado1(Ea_Es1)           #llama a la funcion Candado 1 y le entraga el valor de la varible Ea_Es1
+            
+            del Es1[0]                          #Borra la posicion 0 de la lista Es1
+            I1= I1+I1
+
+            if Es2[I2] != Es2[-1]:               #Comprueba que haya realmente un cambio en la variable Es2 de la base de datos
+                self.Candado2(Ea_Es2)            #llama a la funcion Candado 2 y le entraga el valor de la varible Ea_Es2
+            
+            del Es2[0]                           #Borra la posicion 0 de la lista Es2
+            I2= I2+I2
+
+            if Es3[I3] != Es3[-1]:              #Comprueba que haya realmente un cambio en la variable Es3 de la base de datos
+                self.Candado3(Ea_Es3)           #llama a la funcion Candado 3 y le entraga el valor de la varible Ea_Es3
+            
+            del Es3[0]                          #Borra la posicion 0 de la lista Es3
+            I3= I3+I3
+            
+            if Es4[I4] != Es4[-1]:              #Comprueba que haya realmente un cambio en la variable Es4 de la base de datos
+                self.Candado4(Ea_Es4)           #llama a la funcion Candado 4 y le entraga el valor de la varible Ea_Es5
+            
+            del Es4[0]                          #Borra la posicion 0 de la lista Es4
+            I4= I4+I4
+
+            if Es5[I5] != Es5[-1]:              #Comprueba que haya realmente un cambio en la variable Es5 de la base de datos
+                self.Candado5(Ea_Es5)            #llama a la funcion Candado 5 y le entraga el valor de la varible Ea_Es5
+            
+            del Es5[0]                          #Borra la posicion 0 de la lista Es5
+            I5= I5+I5
+
+            sleep(0.4)                         #se genera el while cada 0.4 segundos
+        
+    def ComprobacionSalida (self):           #Esta funcion ejecuta la varificacion del dato de la tarjeta RFID con alguno de la base de datos y asi generar una salida
+        GPIO.setmode(GPIO.BOARD)             #Codigo para definir el uso de los pines de la raspberry
+        while True:                          #Repetecion para que el lector lea seguido
+
+            try:
+                id, text = reader.read()     #Guarda los datos anteriormente Registrados en id y text
+                TextoC="{}"                  #Se crea un srt para poder comparar el codigo de la tarjeta con la base de datos
+                Verificacion = TextoC.format(id)    #Guarda el codigo de la tarjeta como str en Varificacion
+
+                CD1 = self.refE1.child("Codigo").get()    #Guarda el codio de la tarjeta de la base de datos en la variable CD1
+                CD2 = self.refE2.child("Codigo").get()    #Guarda el codio de la tarjeta de la base de datos en la variable CD2
+                CD3 = self.refE3.child("Codigo").get()    #Guarda el codio de la tarjeta de la base de datos en la variable CD3
+                CD4 = self.refE4.child("Codigo").get()    #Guarda el codio de la tarjeta de la base de datos en la variable CD4
+                CD5 = self.refE5.child("Codigo").get()    #Guarda el codio de la tarjeta de la base de datos en la variable CD5
+
+                if Verificacion == CD1:               # Compara si el Codigo leido calza con el del estacionamiendo 1
+                    print("Estudiante en el estacionamiento 1: " + text)                 #Imprime en la consola 
+                    self.refEs1.set("libre")                                             #Se escrible libre en el estacionamiento Es1
+                if Verificacion == CD2:               # Compara si el Codigo leido calza con el del estacionamiendo 1
+                    print("Estudiante en el estacionamiento 2: " + text)                  #Imprime en la consola
+                    self.refEs2.set("libre")                                             #Se escrible libre en el estacionamiento Es2
+                if Verificacion == CD3:               # Compara si el Codigo leido calza con el del estacionamiendo 1
+                    print("Estudiante en el estacionamiento 3: " + text)                 #Imprime en la consola
+                    self.refEs3.set("libre")                                             #Se escrible libre en el estacionamiento Es3
+                if Verificacion == CD4:               # Compara si el Codigo leido calza con el del estacionamiendo 1
+                    print("Estudiante en el estacionamiento 4: " + text)                 #Imprime en la consola
+                    self.refEs4.set("libre")                                             #Se escrible libre en el estacionamiento Es4
+                if Verificacion == CD5:               # Compara si el Codigo leido calza con el del estacionamiendo 1
+                    print("Estudiante en el estacionamiento 5: " + text)                 #Imprime en la consola
+                    self.refEs5.set("libre")                                             #Se escrible libre en el estacionamiento Es5
+                if Verificacion != CD1 and CD2 and CD3 and CD4 and CD5:  #Si el codigo no esta en ningun estacionamiento entra a este if
+                    print("Error")
+                    print("El estudiante no esta estacionado")             #Imprime en la consola
+
+            finally: 
+        	    GPIO.cleanup()              #Se libera los pines utilizados en el lector para despues utilizarlos como salidas
+
+                    
+print ('START !')              #Se imprime START en la consola de la raspberry para indicar que el programa funciona correctamente
+iot=IOT()                      #Se llama a la Clase IOT
+
+subproceso_ComprobacionSalida = Thread(target=iot.ComprobacionSalida)
+subproceso_ComprobacionSalida.daemon = True
+subproceso_ComprobacionSalida.start()                          #Se ejecuta como subproceso la funcion Comprobacion Salida
+
+subproceso_ComprobacionEntrada = Thread(target=iot.ComprobacionEntrada)
+subproceso_ComprobacionEntrada.daemon = True
+subproceso_ComprobacionEntrada.start()                         #Se ejecuta como subproceso la funcion Comprobacion Salida
+
+signal.pause()                                             #Se genera una senal de espera en la consola de la raspberry para la obtencion de senales y su comparacion
